@@ -119,40 +119,55 @@ client.on(Events.MessageCreate, async (message) => {
     const connection = voiceConnections.get(voiceChannel.id);
     if (!connection) return;
 
-    const text = message.content.replace(/\s+/g, " ").trim();
-    const apiUrl = `https://api.su-shiki.com/v2/voicevox/audio/?text=${
-        encodeURIComponent(text)
-    }&speaker=${speakerId}&key=${VOICE_BOX_API_TOKEN}`;
+    const segments = message.content.split(/[。！？\n]/).map((s) => s.trim())
+        .filter((s) => s.length > 0);
 
-    const stream = new PassThrough();
+    const playSegment = async (segment) => {
+        const text = segment.replace(/\s+/g, " ").trim();
+        const apiUrl = `https://api.su-shiki.com/v2/voicevox/audio/?text=${
+            encodeURIComponent(text)
+        }&speaker=${speakerId}&key=${VOICE_BOX_API_TOKEN}`;
+        const stream = new PassThrough();
 
-  try {
-    await new Promise((resolve, reject) => {
-      get(apiUrl, (res) => {
-        if (res.statusCode !== 200) {
-          message.channel.send(`❌ 音声取得に失敗しました: HTTP ${res.statusCode}`);
-          return resolve(null);
+        try {
+            await new Promise((resolve) => {
+                get(apiUrl, (res) => {
+                    if (res.statusCode !== 200) {
+                        message.channel.send(
+                            `❌ 音声取得に失敗しました: HTTP ${res.statusCode}`,
+                        );
+                        return resolve(null);
+                    }
+                    res.pipe(stream);
+                    res.on("end", resolve);
+                }).on("error", (err) => {
+                    console.error(err);
+                    message.channel.send(
+                        "❌ 音声取得時にエラーが発生しました。",
+                    );
+                    resolve(null);
+                });
+            });
+
+            const player = createAudioPlayer();
+            const resource = createAudioResource(stream, {
+                inputType: StreamType.Arbitrary,
+            });
+
+            player.play(resource);
+            connection.subscribe(player);
+
+            await new Promise((res) => {
+                player.on(AudioPlayerStatus.Idle, () => res());
+            });
+        } catch (e) {
+            console.error("TTS error:", e);
         }
-        res.pipe(stream);
-        res.on("end", resolve);
-      }).on("error", (err) => {
-        console.error(err);
-        message.channel.send("❌ 音声取得時にエラーが発生しました。");
-        resolve(null);
-      });
-    });
-  } catch (e) {
-    console.error("TTS error:", e);
-    return;
-  }
+    };
 
-    const player = createAudioPlayer();
-    const resource = createAudioResource(stream, {
-        inputType: StreamType.Arbitrary,
-    });
-
-    player.play(resource);
-    connection.subscribe(player);
+    for (const segment of segments) {
+        await playSegment(segment);
+    }
 });
 
 client.login(DISCORD_TOKEN);
