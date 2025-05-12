@@ -45,7 +45,6 @@ client.on(Events.MessageCreate, async (message) => {
 
     if (!guildId) return;
 
-    // TTS コマンド処理
     if (message.content.startsWith("tts")) {
         if (message.content === "tts ls") {
             const apiUrl =
@@ -119,8 +118,18 @@ client.on(Events.MessageCreate, async (message) => {
     const connection = voiceConnections.get(voiceChannel.id);
     if (!connection) return;
 
-    const segments = message.content.split(/[。！？\n]/).map((s) => s.trim())
-        .filter((s) => s.length > 0);
+    const segments = message.content
+        .split(/[、.,。！？\n]/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+        .flatMap((s) => {
+            const chars = [...s];
+            const result = [];
+            for (let i = 0; i < chars.length; i += 10) {
+                result.push(chars.slice(i, i + 10).join(""));
+            }
+            return result;
+        });
 
     const playSegment = async (segment) => {
         const text = segment.replace(/\s+/g, " ").trim();
