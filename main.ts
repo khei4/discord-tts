@@ -11,8 +11,10 @@ import {
     StreamType,
     VoiceConnection,
 } from "@discordjs/voice";
-import { get } from "https";
+import { request } from "https";
 import { PassThrough } from "stream";
+import { createWriteStream } from "fs";
+import { finished } from "stream/promises";
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN!;
 const VOICE_BOX_API_TOKEN = process.env.VOICE_BOX_API_TOKEN!;
@@ -118,44 +120,54 @@ client.on(Events.MessageCreate, async (message) => {
     const connection = voiceConnections.get(voiceChannel.id);
     if (!connection) return;
 
-    const segments = message.content
-        .split(/[、.,。！？\n]/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
-        .flatMap((s) => {
-            const chars = [...s];
-            const result = [];
-            for (let i = 0; i < chars.length; i += 10) {
-                result.push(chars.slice(i, i + 10).join(""));
-            }
-            return result;
-        });
-
-    const playSegment = async (segment) => {
-        const text = segment.replace(/\s+/g, " ").trim();
-        const apiUrl = `https://api.su-shiki.com/v2/voicevox/audio/?text=${
+    const playSegment = async () => {
+        const text = message.content.replace(/\s+/g, " ").trim();
+        const postData = `text=${
             encodeURIComponent(text)
-        }&speaker=${speakerId}&key=${VOICE_BOX_API_TOKEN}`;
+        }&key=${VOICE_BOX_API_TOKEN}`;
+        console.log(postData);
         const stream = new PassThrough();
+
+        const options = {
+            hostname: "api.su-shiki.com",
+            path: `/v2/voicevox/audio/?speaker=${speakerId}`,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        };
 
         try {
             await new Promise((resolve) => {
-                get(apiUrl, (res) => {
+                const req = request(options, (res) => {
                     if (res.statusCode !== 200) {
                         message.channel.send(
                             `❌ 音声取得に失敗しました: HTTP ${res.statusCode}`,
                         );
                         return resolve(null);
                     }
+
+                    const fileStream = createWriteStream(
+                        `voice-${Date.now()}.wav`,
+                    );
                     res.pipe(stream);
-                    res.on("end", resolve);
-                }).on("error", (err) => {
+                    // res.pipe(fileStream); // ファイルにも保存
+
+                    finished(res).then(() => {
+                        console.log("✅ stream finished");
+                        resolve(null);
+                    });
+                });
+
+                req.on("error", (err) => {
                     console.error(err);
                     message.channel.send(
                         "❌ 音声取得時にエラーが発生しました。",
                     );
                     resolve(null);
                 });
+                req.write(postData);
+                req.end();
             });
 
             const player = createAudioPlayer();
@@ -163,20 +175,17 @@ client.on(Events.MessageCreate, async (message) => {
                 inputType: StreamType.Arbitrary,
             });
 
-            player.play(resource);
             connection.subscribe(player);
+            player.play(resource);
 
             await new Promise((res) => {
-                player.on(AudioPlayerStatus.Idle, () => res());
+                player.once(AudioPlayerStatus.Idle, res);
             });
         } catch (e) {
             console.error("TTS error:", e);
         }
     };
-
-    for (const segment of segments) {
-        await playSegment(segment);
-    }
+    await playSegment();
 });
 
 client.login(DISCORD_TOKEN);
