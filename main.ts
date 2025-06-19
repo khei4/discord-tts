@@ -147,11 +147,7 @@ client.on(Events.MessageCreate, async (message) => {
                         return resolve(null);
                     }
 
-                    const fileStream = createWriteStream(
-                        `voice-${Date.now()}.wav`,
-                    );
                     res.pipe(stream);
-                    // res.pipe(fileStream); // ファイルにも保存
 
                     finished(res).then(() => {
                         console.log("✅ stream finished");
