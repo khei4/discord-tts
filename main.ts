@@ -13,7 +13,6 @@ import {
 } from "@discordjs/voice";
 import { request } from "https";
 import { PassThrough } from "stream";
-import { createWriteStream } from "fs";
 import { finished } from "stream/promises";
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN!;
